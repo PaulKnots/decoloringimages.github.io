@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Clipart to Coloring Book Converter",
+  "description": "An application that automatically converts a color clipart image into a black-and-white, printable coloring book page by intelligently removing fill colors while preserving and enhancing the outlines.",
+  "requestFramePermissions": []
+}
