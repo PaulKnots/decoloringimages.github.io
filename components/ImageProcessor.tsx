@@ -1,5 +1,5 @@
-
 import React, { useState, useCallback, useRef } from 'react';
+import { jsPDF } from 'jspdf';
 import { fileToBase64 } from '../utils/fileUtils';
 import { convertToColoringPage } from '../services/geminiService';
 
@@ -35,10 +35,11 @@ const ImageProcessor: React.FC = () => {
   const [convertedImageBase64, setConvertedImageBase64] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [lineThickness, setLineThickness] = useState<number>(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const processFile = useCallback(async (file: File | null | undefined) => {
     if (file) {
       if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
         setError('Invalid file type. Please upload a PNG, JPG, WEBP or SVG.');
@@ -55,6 +56,26 @@ const ImageProcessor: React.FC = () => {
         console.error(err);
       }
     }
+  }, []);
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await processFile(event.target.files?.[0]);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    await processFile(event.dataTransfer.files?.[0]);
   };
 
   const handleConvert = useCallback(async () => {
@@ -68,7 +89,7 @@ const ImageProcessor: React.FC = () => {
     try {
       const base64Data = originalImageBase64.split(',')[1];
       const mimeType = originalFile.type;
-      const resultBase64Data = await convertToColoringPage(base64Data, mimeType);
+      const resultBase64Data = await convertToColoringPage(base64Data, mimeType, lineThickness);
       if (resultBase64Data) {
         setConvertedImageBase64(`data:image/png;base64,${resultBase64Data}`);
       } else {
@@ -81,9 +102,9 @@ const ImageProcessor: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [originalFile, originalImageBase64]);
+  }, [originalFile, originalImageBase64, lineThickness]);
 
-  const handleDownload = () => {
+  const handleDownloadPng = () => {
     if (!convertedImageBase64) return;
     const link = document.createElement('a');
     link.href = convertedImageBase64;
@@ -93,9 +114,45 @@ const ImageProcessor: React.FC = () => {
     document.body.removeChild(link);
   };
   
+  const handleDownloadPdf = () => {
+    if (!convertedImageBase64) return;
+    const img = new Image();
+    img.src = convertedImageBase64;
+    img.onload = () => {
+      const imgWidth = img.width;
+      const imgHeight = img.height;
+      const pageOrientation = imgWidth > imgHeight ? 'landscape' : 'portrait';
+      const doc = new jsPDF(pageOrientation, 'pt', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const pageAspectRatio = pageWidth / pageHeight;
+      const imageAspectRatio = imgWidth / imgHeight;
+      let finalImgWidth, finalImgHeight;
+      const margin = 40; 
+      const effectiveWidth = pageWidth - 2 * margin;
+      const effectiveHeight = pageHeight - 2 * margin;
+
+      if (imageAspectRatio > pageAspectRatio) {
+        finalImgWidth = effectiveWidth;
+        finalImgHeight = finalImgWidth / imageAspectRatio;
+      } else {
+        finalImgHeight = effectiveHeight;
+        finalImgWidth = finalImgHeight * imageAspectRatio;
+      }
+      const x = (pageWidth - finalImgWidth) / 2;
+      const y = (pageHeight - finalImgHeight) / 2;
+      doc.addImage(convertedImageBase64, 'PNG', x, y, finalImgWidth, finalImgHeight);
+      doc.save('coloring-page.pdf');
+    };
+  };
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
+
+  const uploadAreaClasses = `mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-md cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400 transition-colors ${
+    isDragging ? 'border-solid border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : ''
+  }`;
 
   return (
     <div className="space-y-6">
@@ -104,8 +161,11 @@ const ImageProcessor: React.FC = () => {
         <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg w-full">
           <h2 className="text-xl font-semibold mb-4 text-center">1. Upload Your Clipart</h2>
           <div
-            className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-md cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400 transition-colors"
+            className={uploadAreaClasses}
             onClick={handleUploadClick}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
             <div className="space-y-1 text-center py-8">
               <UploadIcon />
@@ -150,22 +210,48 @@ const ImageProcessor: React.FC = () => {
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-lg flex flex-col md:flex-row items-center justify-center gap-4 sticky bottom-4">
-        <button
-          onClick={handleConvert}
-          disabled={!originalFile || isLoading}
-          className="w-full md:w-auto flex-1 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105 disabled:scale-100"
-        >
-          {isLoading ? 'Converting...' : '✨ Convert to Coloring Page'}
-        </button>
-        <button
-          onClick={handleDownload}
-          disabled={!convertedImageBase64 || isLoading}
-          className="w-full md:w-auto flex-1 bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-600 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105 disabled:scale-100"
-        >
-          Download Page
-        </button>
+      {/* Settings & Action Buttons */}
+      <div className="sticky bottom-4 z-10 space-y-4">
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-lg">
+          <label htmlFor="line-thickness-slider" className="block text-sm font-medium text-slate-700 dark:text-slate-300 text-center mb-2">
+            Line Thickness: <span className="font-bold text-indigo-600 dark:text-indigo-400">{['Very Thin', 'Thin', 'Medium', 'Thick', 'Very Thick'][lineThickness -1]}</span>
+          </label>
+          <input
+            id="line-thickness-slider"
+            type="range"
+            min="1"
+            max="5"
+            step="1"
+            value={lineThickness}
+            onChange={(e) => setLineThickness(Number(e.target.value))}
+            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-indigo-600"
+            disabled={isLoading}
+          />
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-lg flex flex-col md:flex-row items-center justify-center gap-4">
+          <button
+            onClick={handleConvert}
+            disabled={!originalFile || isLoading}
+            className="w-full md:w-auto flex-1 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105 disabled:scale-100"
+          >
+            {isLoading ? 'Converting...' : '✨ Convert to Coloring Page'}
+          </button>
+          <button
+            onClick={handleDownloadPng}
+            disabled={!convertedImageBase64 || isLoading}
+            className="w-full md:w-auto flex-1 bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-600 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105 disabled:scale-100"
+          >
+            Download PNG
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={!convertedImageBase64 || isLoading}
+            className="w-full md:w-auto flex-1 bg-rose-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-rose-600 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105 disabled:scale-100"
+          >
+            Download PDF
+          </button>
+        </div>
       </div>
     </div>
   );
