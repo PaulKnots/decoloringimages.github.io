@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import { fileToBase64 } from '../utils/fileUtils';
@@ -21,7 +22,7 @@ const UploadIcon: React.FC = () => (
 );
 
 const Spinner: React.FC = () => (
-  <div className="absolute inset-0 bg-white/80 dark:bg-slate-800/80 flex items-center justify-center rounded-lg">
+  <div className="absolute inset-0 bg-white/80 dark:bg-slate-800/80 flex items-center justify-center rounded-lg z-10">
     <div className="flex flex-col items-center">
       <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-500"></div>
       <p className="mt-4 text-slate-600 dark:text-slate-300 font-semibold">Creating your masterpiece...</p>
@@ -97,7 +98,12 @@ const ImageProcessor: React.FC = () => {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Conversion failed: ${errorMessage}`);
+      // Check for 429 or quota errors to give a better message
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+         setError('⚠️ Usage limit reached. The AI service is busy or you have hit the free tier rate limit. Please wait about 60 seconds and try again.');
+      } else {
+         setError(`Conversion failed: ${errorMessage}`);
+      }
       console.error(err);
     } finally {
       setIsLoading(false);

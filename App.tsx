@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import ImageProcessor from './components/ImageProcessor';
 
 const Header: React.FC = () => (
@@ -16,6 +16,26 @@ const Header: React.FC = () => (
 );
 
 const App: React.FC = () => {
+  // Add global event listeners to prevent default browser drag-and-drop behavior
+  // This ensures dragging a file outside the drop zone doesn't open it in the browser tab
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen text-slate-800 dark:text-slate-200">
       <Header />
